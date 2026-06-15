@@ -24,21 +24,40 @@ let isListening = false;
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Application initialisée');
     loadState();
     initSpeechRecognition();
     updateUI();
+    updateAchievements();
 });
 
 function loadState() {
-    const saved = localStorage.getItem('seniorConnectState');
-    if (saved) {
-        const parsed = JSON.parse(saved);
-        Object.assign(appState, parsed);
+    try {
+        const saved = localStorage.getItem('seniorConnectState');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            Object.assign(appState, parsed);
+            
+            // Reconvertir la Map
+            if (parsed.userVocabulary) {
+                appState.userVocabulary = new Map(Object.entries(parsed.userVocabulary));
+            }
+        }
+    } catch (error) {
+        console.error('Erreur chargement état:', error);
     }
 }
 
 function saveState() {
-    localStorage.setItem('seniorConnectState', JSON.stringify(appState));
+    try {
+        const toSave = {
+            ...appState,
+            userVocabulary: Object.fromEntries(appState.userVocabulary)
+        };
+        localStorage.setItem('seniorConnectState', JSON.stringify(toSave));
+    } catch (error) {
+        console.error('Erreur sauvegarde état:', error);
+    }
 }
 
 function startApp() {
@@ -56,8 +75,11 @@ function startApp() {
 
 function switchScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(screenId).classList.add('active');
-    appState.currentScreen = screenId;
+    const targetScreen = document.getElementById(screenId);
+    if (targetScreen) {
+        targetScreen.classList.add('active');
+        appState.currentScreen = screenId;
+    }
 }
 
 function switchTab(tab) {
@@ -67,7 +89,7 @@ function switchTab(tab) {
     switch(tab) {
         case 'chat':
             switchScreen('main-screen');
-            document.querySelector('.nav-item').classList.add('active');
+            document.querySelectorAll('.nav-item')[0].classList.add('active');
             break;
         case 'learning':
             switchScreen('learning-screen');
@@ -75,13 +97,11 @@ function switchTab(tab) {
             updateLearningScreen();
             break;
         case 'community':
-            if (appState.isPremium) {
-                switchScreen('community-screen');
-                loadCommunity();
-            } else {
-                switchScreen('community-screen');
-            }
+            switchScreen('community-screen');
             document.querySelectorAll('.nav-item')[2].classList.add('active');
+            if (appState.isPremium) {
+                loadCommunity();
+            }
             break;
         case 'settings':
             switchScreen('settings-screen');
@@ -93,13 +113,16 @@ function switchTab(tab) {
 // Gestion des messages
 function addMessage(type, text) {
     const messagesContainer = document.getElementById('messages');
+    if (!messagesContainer) return;
+    
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
     
     if (type === 'assistant') {
+        const safeText = text.replace(/'/g, "&apos;");
         messageDiv.innerHTML = `
-            ${text}
-            <button class="speaker-btn" onclick="speak('${text.replace(/'/g, "\\'")}')">
+            <div>${text}</div>
+            <button class="speaker-btn" onclick="speak(\`${safeText}\`)">
                 🔊 Écouter
             </button>
         `;
@@ -110,14 +133,21 @@ function addMessage(type, text) {
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
+    // Ajouter à l'historique
+    appState.conversationHistory.push({ type, text, timestamp: Date.now() });
+    
     // Apprentissage du vocabulaire
     if (type === 'user') {
         learnFromUserInput(text);
     }
+    
+    saveState();
 }
 
 function sendMessage() {
     const input = document.getElementById('user-input');
+    if (!input) return;
+    
     const message = input.value.trim();
     
     if (message) {
@@ -142,8 +172,11 @@ function handleKeyPress(event) {
 }
 
 function askQuestion(question) {
-    document.getElementById('user-input').value = question;
-    sendMessage();
+    const input = document.getElementById('user-input');
+    if (input) {
+        input.value = question;
+        sendMessage();
+    }
 }
 
 // IA Adaptive - Génération de réponses
@@ -151,12 +184,12 @@ function generateResponse(message) {
     const lowerMessage = message.toLowerCase();
     
     // Détection de contexte géographique
-    if (lowerMessage.includes('où') && lowerMessage.includes('suis')) {
+    if ((lowerMessage.includes('où') && lowerMessage.includes('suis')) || lowerMessage.includes('position') || lowerMessage.includes('localisation')) {
         return getLocationResponse();
     }
     
     // Email
-    if (lowerMessage.includes('email') || lowerMessage.includes('mail')) {
+    if (lowerMessage.includes('email') || lowerMessage.includes('mail') || lowerMessage.includes('courriel')) {
         return `Pour envoyer un email :
         
 1️⃣ Ouvrez votre application de messagerie (Gmail, Outlook, etc.)
@@ -170,7 +203,7 @@ Voulez-vous que je vous montre étape par étape ?`;
     }
     
     // Appel vidéo
-    if (lowerMessage.includes('appel') || lowerMessage.includes('vidéo')) {
+    if (lowerMessage.includes('appel') || lowerMessage.includes('vidéo') || lowerMessage.includes('visio')) {
         return `Pour faire un appel vidéo :
 
 📱 Sur smartphone :
@@ -200,31 +233,31 @@ Quelle application utilisez-vous ?`;
 Astuce : Posez votre question comme si vous parliez à quelqu'un !`;
     }
     
-    // Réponse adaptative générique
-    return adaptResponse(`Je comprends que vous voulez en savoir plus sur "${message}". 
-
-Voici ce que je peux vous expliquer de façon simple :
-
-${getSimplifiedExplanation(message)}
-
-Est-ce que vous voulez plus de détails sur un point particulier ?`);
-}
-
-function getSimplifiedExplanation(topic) {
-    // Ici, vous pourriez intégrer une vraie IA (OpenAI, etc.)
-    const explanations = {
-        default: `C'est une fonctionnalité qui vous permet d'accomplir une tâche sur internet. Je vais vous guider pas à pas !`
-    };
+    // Salutations
+    if (lowerMessage.includes('bonjour') || lowerMessage.includes('salut') || lowerMessage.includes('hello')) {
+        return `Bonjour ! 😊 Je suis ravi de vous aider aujourd'hui. Comment puis-je vous être utile ?`;
+    }
     
-    return explanations.default;
+    // Merci
+    if (lowerMessage.includes('merci') || lowerMessage.includes('thank')) {
+        return `Avec plaisir ! 😊 N'hésitez pas si vous avez d'autres questions !`;
+    }
+    
+    // Réponse adaptative générique
+    return `Je comprends que vous voulez en savoir plus sur "${message}".
+
+Pouvez-vous me donner plus de détails sur ce que vous cherchez exactement ? Par exemple :
+- Voulez-vous apprendre à utiliser quelque chose ?
+- Avez-vous un problème technique ?
+- Cherchez-vous une information précise ?
+
+Je suis là pour vous aider ! 😊`;
 }
 
 function adaptResponse(response) {
-    // Adapte le vocabulaire en fonction du niveau de l'utilisateur
     const userLevel = appState.userLevel;
     
     if (userLevel < 3) {
-        // Simplifier encore plus
         response = response.replace(/fonctionnalité/g, 'fonction');
         response = response.replace(/navigateur/g, 'programme pour internet');
     }
@@ -234,23 +267,19 @@ function adaptResponse(response) {
 
 // Apprentissage du vocabulaire
 function learnFromUserInput(text) {
-    const words = text.toLowerCase().split(' ');
+    const words = text.toLowerCase().split(' ').filter(w => w.length > 3);
     
     words.forEach(word => {
-        if (word.length > 3) {
-            const count = appState.userVocabulary.get(word) || 0;
-            appState.userVocabulary.set(word, count + 1);
+        const count = appState.userVocabulary.get(word) || 0;
+        appState.userVocabulary.set(word, count + 1);
+        
+        if (count + 1 === 3 && !appState.learnedWords.includes(word)) {
+            appState.learnedWords.push(word);
+            appState.adaptationProgress = Math.min(100, appState.adaptationProgress + 5);
             
-            // Ajouter aux mots appris si répété 3 fois
-            if (count + 1 === 3 && !appState.learnedWords.includes(word)) {
-                appState.learnedWords.push(word);
-                appState.adaptationProgress = Math.min(100, appState.adaptationProgress + 5);
-                
-                // Level up tous les 10 mots
-                if (appState.learnedWords.length % 10 === 0) {
-                    appState.userLevel++;
-                    showAchievement(`🎉 Niveau ${appState.userLevel} atteint !`);
-                }
+            if (appState.learnedWords.length % 10 === 0) {
+                appState.userLevel++;
+                showAchievement(`🎉 Niveau ${appState.userLevel} atteint !`);
             }
         }
     });
@@ -269,25 +298,24 @@ function getLocationResponse() {
             (position) => {
                 const { latitude, longitude } = position.coords;
                 
-                // Utiliser une API de géocodage inverse (exemple avec Nominatim)
                 fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`)
                     .then(response => response.json())
                     .then(data => {
-                        const address = data.display_name;
+                        const address = data.display_name || "Adresse inconnue";
                         const response = `📍 Vous êtes ici : ${address}
 
-Coordonnées : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}
-
-Que voulez-vous faire avec cette information ?`;
+Coordonnées : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
                         
                         addMessage('assistant', response);
                         speak("Je vous ai trouvé ! Regardez votre position sur l'écran.");
                     })
                     .catch(error => {
-                        addMessage('assistant', "Désolé, je n'ai pas pu déterminer votre adresse exacte, mais je connais vos coordonnées GPS.");
+                        console.error('Erreur géocodage:', error);
+                        addMessage('assistant', `📍 Vos coordonnées GPS : ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
                     });
             },
             (error) => {
+                console.error('Erreur géolocalisation:', error);
                 addMessage('assistant', "Je n'arrive pas à accéder à votre position. Vérifiez que vous avez autorisé l'accès à votre localisation.");
             }
         );
@@ -300,70 +328,91 @@ Que voulez-vous faire avec cette information ?`;
 
 // Reconnaissance vocale
 function initSpeechRecognition() {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
-        recognition.lang = 'fr-FR';
-        recognition.continuous = false;
-        recognition.interimResults = false;
+    try {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'fr-FR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
 
-        recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
-            document.getElementById('user-input').value = transcript;
-            sendMessage();
-        };
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                const input = document.getElementById('user-input');
+                if (input) {
+                    input.value = transcript;
+                    sendMessage();
+                }
+            };
 
-        recognition.onerror = (event) => {
-            console.error('Erreur de reconnaissance vocale:', event.error);
-            stopVoiceRecognition();
-        };
+            recognition.onerror = (event) => {
+                console.error('Erreur reconnaissance vocale:', event.error);
+                stopVoiceRecognition();
+            };
 
-        recognition.onend = () => {
-            stopVoiceRecognition();
-        };
+            recognition.onend = () => {
+                stopVoiceRecognition();
+            };
+        }
+    } catch (error) {
+        console.error('Erreur init reconnaissance vocale:', error);
     }
 }
 
 function startVoiceRecognition() {
     if (recognition && !isListening) {
-        recognition.start();
-        isListening = true;
-        document.getElementById('voice-btn').classList.add('active');
-        document.getElementById('voice-indicator').classList.add('active');
+        try {
+            recognition.start();
+            isListening = true;
+            const voiceBtn = document.getElementById('voice-btn');
+            const voiceIndicator = document.getElementById('voice-indicator');
+            if (voiceBtn) voiceBtn.classList.add('active');
+            if (voiceIndicator) voiceIndicator.classList.add('active');
+        } catch (error) {
+            console.error('Erreur démarrage reconnaissance:', error);
+        }
     }
 }
 
 function stopVoiceRecognition() {
     if (recognition && isListening) {
-        recognition.stop();
-        isListening = false;
-        document.getElementById('voice-btn').classList.remove('active');
-        document.getElementById('voice-indicator').classList.remove('active');
+        try {
+            recognition.stop();
+            isListening = false;
+            const voiceBtn = document.getElementById('voice-btn');
+            const voiceIndicator = document.getElementById('voice-indicator');
+            if (voiceBtn) voiceBtn.classList.remove('active');
+            if (voiceIndicator) voiceIndicator.classList.remove('active');
+        } catch (error) {
+            console.error('Erreur arrêt reconnaissance:', error);
+        }
     }
 }
 
 // Synthèse vocale
 function speak(text) {
-    if (synth.speaking) {
-        synth.cancel();
+    try {
+        if (synth.speaking) {
+            synth.cancel();
+        }
+        
+        const cleanText = text.replace(/<[^>]*>/g, '').replace(/[^\w\s.,!?àâäéèêëïîôùûüÿçÀÂÄÉÈÊËÏÎÔÙÛÜŸÇ]/g, '');
+        
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = 'fr-FR';
+        utterance.rate = appState.settings.speed;
+        
+        const voices = synth.getVoices();
+        const frenchVoice = voices.find(voice => voice.lang.startsWith('fr'));
+        
+        if (frenchVoice) {
+            utterance.voice = frenchVoice;
+        }
+        
+        synth.speak(utterance);
+    } catch (error) {
+        console.error('Erreur synthèse vocale:', error);
     }
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'fr-FR';
-    utterance.rate = appState.settings.speed;
-    
-    // Sélectionner la voix
-    const voices = synth.getVoices();
-    const selectedVoice = voices.find(voice => 
-        voice.lang.includes('fr') && 
-        (appState.settings.voiceType === 'female' ? voice.name.includes('female') || voice.name.includes('Female') : voice.name.includes('male') || voice.name.includes('Male'))
-    ) || voices.find(voice => voice.lang.includes('fr'));
-    
-    if (selectedVoice) {
-        utterance.voice = selectedVoice;
-    }
-    
-    synth.speak(utterance);
 }
 
 // Réglages
@@ -375,10 +424,12 @@ function updateFontSize(size) {
 
 function adjustFontSize(delta) {
     const slider = document.getElementById('font-slider');
-    const newSize = parseInt(slider.value) + delta;
-    if (newSize >= 16 && newSize <= 24) {
-        slider.value = newSize;
-        updateFontSize(newSize);
+    if (slider) {
+        const newSize = parseInt(slider.value) + delta;
+        if (newSize >= 16 && newSize <= 24) {
+            slider.value = newSize;
+            updateFontSize(newSize);
+        }
     }
 }
 
@@ -404,21 +455,35 @@ function toggleVoiceConfirm(enabled) {
 
 // Écran d'apprentissage
 function updateLearningScreen() {
-    // Mise à jour de la barre de progression
-    document.getElementById('adaptation-progress').style.width = appState.adaptationProgress + '%';
-    document.getElementById('adaptation-percent').textContent = appState.adaptationProgress;
-    
-    // Affichage des mots appris
+    const progressBar = document.getElementById('adaptation-progress');
+    const progressPercent = document.getElementById('adaptation-percent');
     const wordList = document.getElementById('word-list');
-    wordList.innerHTML = '';
-    appState.learnedWords.slice(-20).forEach(word => {
-        const chip = document.createElement('div');
-        chip.className = 'word-chip';
-        chip.textContent = word;
-        wordList.appendChild(chip);
-    });
     
-    // Achievements
+    if (progressBar) {
+        progressBar.style.width = appState.adaptationProgress + '%';
+    }
+    
+    if (progressPercent) {
+        progressPercent.textContent = appState.adaptationProgress;
+    }
+    
+    if (wordList) {
+        wordList.innerHTML = '';
+        if (appState.learnedWords.length === 0) {
+            const emptyChip = document.createElement('div');
+            emptyChip.className = 'word-chip';
+            emptyChip.textContent = 'Aucun mot appris pour le moment';
+            wordList.appendChild(emptyChip);
+        } else {
+            appState.learnedWords.slice(-20).forEach(word => {
+                const chip = document.createElement('div');
+                chip.className = 'word-chip';
+                chip.textContent = word;
+                wordList.appendChild(chip);
+            });
+        }
+    }
+    
     updateAchievements();
 }
 
@@ -428,30 +493,31 @@ function updateAchievements() {
         { id: 'level-5', name: 'Niveau 5', icon: '⭐', condition: appState.userLevel >= 5 },
         { id: 'week-streak', name: '7 jours de suite', icon: '🔥', condition: appState.streak >= 7 },
         { id: 'vocab-master', name: '50 mots appris', icon: '📚', condition: appState.learnedWords.length >= 50 },
-        { id: 'early-bird', name: 'Lève-tôt', icon: '🌅', condition: false },
-        { id: 'night-owl', name: 'Couche-tard', icon: '🦉', condition: false }
+        { id: 'conversationalist', name: '10 conversations', icon: '💬', condition: appState.conversationHistory.length >= 10 },
+        { id: 'explorer', name: 'Explorateur', icon: '🗺️', condition: appState.conversationHistory.some(c => c.text.toLowerCase().includes('où')) }
     ];
     
     const achievementsContainer = document.getElementById('achievements');
-    achievementsContainer.innerHTML = '';
-    
-    achievements.forEach(achievement => {
-        const div = document.createElement('div');
-        div.className = `achievement ${achievement.condition ? 'unlocked' : ''}`;
-        div.innerHTML = `
-            <div class="achievement-icon">${achievement.icon}</div>
-            <div class="achievement-name">${achievement.name}</div>
-        `;
-        achievementsContainer.appendChild(div);
-    });
+    if (achievementsContainer) {
+        achievementsContainer.innerHTML = '';
+        
+        achievements.forEach(achievement => {
+            const div = document.createElement('div');
+            div.className = `achievement ${achievement.condition ? 'unlocked' : ''}`;
+            div.innerHTML = `
+                <div class="achievement-icon">${achievement.icon}</div>
+                <div class="achievement-name">${achievement.name}</div>
+            `;
+            achievementsContainer.appendChild(div);
+        });
+    }
 }
 
 function showAchievement(text) {
-    // Créer une notification
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed;
-        top: 20px;
+        top: 80px;
         left: 50%;
         transform: translateX(-50%);
         background: var(--primary-color);
@@ -463,6 +529,8 @@ function showAchievement(text) {
         box-shadow: var(--shadow-lg);
         z-index: 3000;
         animation: slideDown 0.5s ease;
+        max-width: 90%;
+        text-align: center;
     `;
     notification.textContent = text;
     document.body.appendChild(notification);
@@ -479,15 +547,20 @@ function showPremiumInfo() {
 }
 
 function showPremiumModal() {
-    document.getElementById('premium-modal').classList.add('active');
+    const modal = document.getElementById('premium-modal');
+    if (modal) {
+        modal.classList.add('active');
+    }
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('active');
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+    }
 }
 
 function subscribePremium() {
-    // Simulation d'abonnement (intégrer Stripe ou autre)
     if (confirm('Démarrer l\'essai gratuit de 7 jours puis 9.99$/mois ?')) {
         appState.isPremium = true;
         saveState();
@@ -498,16 +571,18 @@ function subscribePremium() {
 }
 
 function loadCommunity() {
+    const communityContent = document.getElementById('community-content');
+    if (!communityContent) return;
+    
     if (appState.isPremium) {
-        const communityContent = document.getElementById('community-content');
         communityContent.innerHTML = `
-            <div class="community-active">
-                <h3>👥 Membres en ligne (12)</h3>
+            <div class="community-active" style="background: white; padding: 1.5rem; border-radius: 16px; box-shadow: var(--shadow);">
+                <h3 style="margin-bottom: 1rem;">👥 Membres en ligne (12)</h3>
                 <div class="member-list">
                     ${generateMemberCards()}
                 </div>
                 
-                <h3 style="margin-top: 2rem;">🎉 Événements à venir</h3>
+                <h3 style="margin: 2rem 0 1rem;">🎉 Événements à venir</h3>
                 <div class="events-list">
                     ${generateEvents()}
                 </div>
@@ -525,13 +600,13 @@ function generateMemberCards() {
     ];
     
     return members.map(member => `
-        <div class="member-card" style="background: white; padding: 1rem; border-radius: 12px; margin: 0.5rem 0; box-shadow: var(--shadow);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h4>${member.name}</h4>
+        <div class="member-card" style="background: var(--bg-secondary); padding: 1rem; border-radius: 12px; margin: 0.5rem 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                <div style="flex: 1; min-width: 150px;">
+                    <h4 style="margin-bottom: 0.25rem;">${member.name}</h4>
                     <p style="color: var(--text-secondary); font-size: 0.9rem;">${member.age} ans • ${member.interests}</p>
                 </div>
-                <button onclick="startChat('${member.name}')" style="background: var(--secondary-color); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+                <button onclick="startChat('${member.name}')" style="background: var(--secondary-color); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; white-space: nowrap;">
                     💬 Discuter
                 </button>
             </div>
@@ -547,10 +622,10 @@ function generateEvents() {
     ];
     
     return events.map(event => `
-        <div class="event-card" style="background: white; padding: 1rem; border-radius: 12px; margin: 0.5rem 0; box-shadow: var(--shadow);">
-            <h4>${event.title}</h4>
-            <p style="color: var(--text-secondary);">📅 ${event.date} • ${event.participants} participants</p>
-            <button onclick="joinEvent('${event.title}')" style="background: var(--primary-color); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; margin-top: 0.5rem; cursor: pointer;">
+        <div class="event-card" style="background: var(--bg-secondary); padding: 1rem; border-radius: 12px; margin: 0.5rem 0;">
+            <h4 style="margin-bottom: 0.5rem;">${event.title}</h4>
+            <p style="color: var(--text-secondary); margin-bottom: 0.5rem;">📅 ${event.date} • ${event.participants} participants</p>
+            <button onclick="joinEvent('${event.title}')" style="background: var(--primary-color); color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; width: 100%;">
                 Participer
             </button>
         </div>
@@ -567,8 +642,11 @@ function joinEvent(eventTitle) {
 
 // Mise à jour de l'UI
 function updateUI() {
-    document.getElementById('streak-count').textContent = appState.streak;
-    document.getElementById('user-level').textContent = appState.userLevel;
+    const streakCount = document.getElementById('streak-count');
+    const userLevel = document.getElementById('user-level');
+    
+    if (streakCount) streakCount.textContent = appState.streak;
+    if (userLevel) userLevel.textContent = appState.userLevel;
     
     if (appState.settings.fontSize) {
         document.body.style.fontSize = appState.settings.fontSize + 'px';
@@ -583,3 +661,11 @@ if (synth.onvoiceschanged !== undefined) {
         synth.getVoices();
     };
 }
+
+// Gestion des clics en dehors du modal
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('premium-modal');
+    if (modal && e.target === modal) {
+        closeModal('premium-modal');
+    }
+});
