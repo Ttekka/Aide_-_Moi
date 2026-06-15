@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SeniorConnect - Votre assistant digital</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#58CC02">
+</head>
+<body>
+    <!-- Écran de bienvenue -->
+    <div id="welcome-screen" class="screen active">
+        <div class="mascot">🦉</div>
+        <h1>Bienvenue sur<br><span class="app-name">SeniorConnect</span></h1>
+        <p class="subtitle">Votre compagnon pour naviguer sur internet facilement</p>
+        <button class="btn-primary" onclick="startApp()">
+            <span>Commencer</span>
+            <span class="icon">→</span>
+        </button>
+        <button class="btn-secondary" onclick="showPremiumInfo()">
+            ✨ Découvrir Premium
+        </button>
+    </div>
+
+    <!-- Écran principal -->
+    <div id="main-screen" class="screen">
+        <!-- Header -->
+        <header>
+            <div class="streak">
+                <span class="fire-icon">🔥</span>
+                <span id="streak-count">0</span>
+            </div>
+            <div class="user-level">
+                <div class="level-badge">Niveau <span id="user-level">1</span></div>
+            </div>
+            <button class="premium-btn" onclick="showPremiumModal()">
+                ✨ Premium
+            </button>
+        </header>
+
+        <!-- Zone de conversation -->
+        <div class="chat-container">
+            <div id="messages" class="messages"></div>
+            
+            <!-- Suggestions rapides -->
+            <div class="quick-suggestions" id="suggestions">
+                <button class="suggestion-chip" onclick="askQuestion('Comment envoyer un email ?')">
+                    📧 Envoyer un email
+                </button>
+                <button class="suggestion-chip" onclick="askQuestion('Comment faire un appel vidéo ?')">
+                    📹 Appel vidéo
+                </button>
+                <button class="suggestion-chip" onclick="askQuestion('Comment chercher sur Google ?')">
+                    🔍 Recherche internet
+                </button>
+                <button class="suggestion-chip" onclick="askQuestion('Où suis-je ?')">
+                    📍 Ma position
+                </button>
+            </div>
+        </div>
+
+        <!-- Zone de saisie -->
+        <div class="input-area">
+            <div class="input-container">
+                <button class="voice-btn" id="voice-btn" onclick="startVoiceRecognition()">
+                    <span class="mic-icon">🎤</span>
+                </button>
+                <input 
+                    type="text" 
+                    id="user-input" 
+                    placeholder="Posez votre question..."
+                    onkeypress="handleKeyPress(event)"
+                >
+                <button class="send-btn" onclick="sendMessage()">
+                    <span>➤</span>
+                </button>
+            </div>
+            <div class="voice-indicator" id="voice-indicator">
+                <div class="pulse"></div>
+                <span>Je vous écoute...</span>
+            </div>
+        </div>
+
+        <!-- Navigation bottom -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" onclick="switchTab('chat')">
+                <span class="nav-icon">💬</span>
+                <span class="nav-label">Assistant</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('learning')">
+                <span class="nav-icon">📚</span>
+                <span class="nav-label">Apprentissage</span>
+            </button>
+            <button class="nav-item premium-tab" onclick="switchTab('community')">
+                <span class="nav-icon">👥</span>
+                <span class="nav-label">Communauté</span>
+                <span class="premium-badge">✨</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('settings')">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-label">Réglages</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Écran Apprentissage -->
+    <div id="learning-screen" class="screen">
+        <div class="screen-header">
+            <button class="back-btn" onclick="switchTab('chat')">←</button>
+            <h2>Vos progrès</h2>
+        </div>
+        
+        <div class="progress-section">
+            <div class="progress-card">
+                <div class="progress-icon">🎯</div>
+                <h3>Niveau d'adaptation</h3>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="adaptation-progress"></div>
+                </div>
+                <p class="progress-text"><span id="adaptation-percent">0</span>% complété</p>
+            </div>
+
+            <div class="learned-words">
+                <h3>Mots que vous maîtrisez</h3>
+                <div id="word-list" class="word-chips"></div>
+            </div>
+
+            <div class="achievements">
+                <h3>Vos réussites</h3>
+                <div class="achievement-grid" id="achievements"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Écran Communauté (Premium) -->
+    <div id="community-screen" class="screen">
+        <div class="screen-header">
+            <button class="back-btn" onclick="switchTab('chat')">←</button>
+            <h2>Communauté</h2>
+        </div>
+        
+        <div id="community-content" class="community-content">
+            <div class="premium-lock">
+                <div class="lock-icon">🔒</div>
+                <h3>Fonctionnalité Premium</h3>
+                <p>Rencontrez d'autres seniors, partagez vos expériences et apprenez ensemble !</p>
+                <ul class="premium-features">
+                    <li>💬 Discussions en groupe</li>
+                    <li>📹 Appels vidéo avec d'autres membres</li>
+                    <li>🎉 Événements virtuels hebdomadaires</li>
+                    <li>🤝 Système de parrainage</li>
+                </ul>
+                <button class="btn-premium" onclick="subscribePremium()">
+                    S'abonner à 9.99$/mois
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Écran Réglages -->
+    <div id="settings-screen" class="screen">
+        <div class="screen-header">
+            <button class="back-btn" onclick="switchTab('chat')">←</button>
+            <h2>Réglages</h2>
+        </div>
+        
+        <div class="settings-content">
+            <div class="setting-group">
+                <h3>Taille du texte</h3>
+                <div class="slider-container">
+                    <button onclick="adjustFontSize(-1)">A-</button>
+                    <input type="range" id="font-slider" min="16" max="24" value="18" onchange="updateFontSize(this.value)">
+                    <button onclick="adjustFontSize(1)">A+</button>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <h3>Voix de l'assistant</h3>
+                <select id="voice-select" onchange="changeVoice(this.value)">
+                    <option value="female">Voix féminine</option>
+                    <option value="male">Voix masculine</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <h3>Vitesse de lecture</h3>
+                <select id="speed-select" onchange="changeSpeed(this.value)">
+                    <option value="0.8">Lent</option>
+                    <option value="1" selected>Normal</option>
+                    <option value="1.2">Rapide</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label class="toggle-setting">
+                    <span>Activer la géolocalisation</span>
+                    <input type="checkbox" id="gps-toggle" checked onchange="toggleGPS(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-group">
+                <label class="toggle-setting">
+                    <span>Confirmation vocale</span>
+                    <input type="checkbox" id="voice-confirm" checked onchange="toggleVoiceConfirm(this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Premium -->
+    <div id="premium-modal" class="modal">
+        <div class="modal-content premium-modal">
+            <button class="close-modal" onclick="closeModal('premium-modal')">×</button>
+            <div class="premium-header">
+                <div class="premium-icon">✨</div>
+                <h2>SeniorConnect Premium</h2>
+                <p class="premium-price">9.99$ / mois</p>
+            </div>
+            
+            <div class="premium-benefits">
+                <div class="benefit-item">
+                    <span class="benefit-icon">👥</span>
+                    <div>
+                        <h4>Communauté active</h4>
+                        <p>Rencontrez d'autres seniors en ligne</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">📹</span>
+                    <div>
+                        <h4>Appels vidéo illimités</h4>
+                        <p>Discutez face à face avec vos nouveaux amis</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">🎓</span>
+                    <div>
+                        <h4>Cours en direct</h4>
+                        <p>Participez à des ateliers hebdomadaires</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">🆘</span>
+                    <div>
+                        <h4>Support prioritaire</h4>
+                        <p>Assistance personnalisée 7j/7</p>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn-subscribe" onclick="subscribePremium()">
+                Commencer l'essai gratuit de 7 jours
+            </button>
+            <p class="premium-notice">Puis 9.99$/mois. Annulez à tout moment.</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
